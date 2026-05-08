@@ -1,99 +1,91 @@
+"""
+Text-cleaning layer for merchant strings.
+
+This module ONLY does syntactic cleanup (regex stripping, whitespace
+collapse, case normalisation).  Mapping cleaned strings to canonical
+services is the job of entity_resolver.py — which uses service_registry as
+its source of truth, not a hardcoded table here.
+
+The legacy MERCHANT_ALIASES dict is kept as a *seed* for cold-start
+bootstrapping only; it's no longer consulted on every resolve() call.
+"""
+
 import re
 import unicodedata
 
-# Maps known raw merchant fragments to a canonical name.
-# This is an identity table, not a price database.
-MERCHANT_ALIASES = {
-    "netflix": "Netflix",
-    "nflx": "Netflix",
-    "spotify": "Spotify",
-    "apple": "Apple",
-    "apple.com": "Apple",
-    "itunes": "Apple",
-    "amazon": "Amazon",
-    "amzn": "Amazon",
-    "amazon prime": "Amazon",
-    "adobe": "Adobe",
-    "adobe creative": "Adobe",
-    "google": "Google",
-    "google play": "Google",
-    "youtube": "YouTube",
-    "hulu": "Hulu",
-    "disney": "Disney+",
-    "disneyplus": "Disney+",
-    "paramount": "Paramount+",
-    "hbomax": "Max",
-    "max": "Max",
-    "peacock": "Peacock",
-    "canva": "Canva",
-    "dropbox": "Dropbox",
-    "github": "GitHub",
-    "notion": "Notion",
-    "slack": "Slack",
-    "zoom": "Zoom",
-    "microsoft": "Microsoft",
-    "office365": "Microsoft",
-    "xbox": "Xbox",
-    "playstation": "PlayStation",
-    "nintendo": "Nintendo",
-    "twitch": "Twitch",
-    "audible": "Audible",
-    "kindle": "Kindle",
-    "pandora": "Pandora",
-    "duolingo": "Duolingo",
-    "calm": "Calm",
-    "headspace": "Headspace",
-    "nytimes": "NY Times",
-    "new york times": "NY Times",
-    "wsj": "Wall Street Journal",
-    "washington post": "Washington Post",
-    "wapost": "Washington Post",
-}
+# Seed used by service_registry.bootstrap_seed() for cold-start.
+# (canonical_name, category, [aliases])
+SEED_SERVICES: list[tuple[str, str, list[str]]] = [
+    ("Netflix",   "streaming", ["netflix", "nflx", "netflix com"]),
+    ("Spotify",   "music",     ["spotify", "spotify usa", "spotify premium"]),
+    ("Apple",     "app_store", ["apple", "apple com bill", "itunes"]),
+    ("Amazon",    "mixed_commerce", ["amazon", "amzn", "amazon prime"]),
+    ("Adobe",     "software",  ["adobe", "adobe creative", "adobe creative cloud"]),
+    ("Google",    "app_store", ["google", "google play"]),
+    ("YouTube",   "streaming", ["youtube", "youtube premium"]),
+    ("Hulu",      "streaming", ["hulu"]),
+    ("Disney+",   "streaming", ["disney", "disneyplus", "disney plus"]),
+    ("Max",       "streaming", ["max", "hbomax", "hbo max"]),
+    ("Paramount+","streaming", ["paramount", "paramount plus"]),
+    ("Peacock",   "streaming", ["peacock"]),
+    ("Canva",     "software",  ["canva"]),
+    ("Dropbox",   "cloud_storage", ["dropbox"]),
+    ("GitHub",    "software",  ["github"]),
+    ("Notion",    "software",  ["notion"]),
+    ("Microsoft", "software",  ["microsoft", "office365", "office 365"]),
+    ("Zoom",      "software",  ["zoom"]),
+    ("Audible",   "music",     ["audible"]),
+    ("Twitch",    "streaming", ["twitch"]),
+    ("PG&E",      "utilities", ["pg&e", "pg e", "pge", "pacific gas electric", "pg&e autopay"]),
+    ("AT&T",      "telecom",   ["at&t", "att", "at t", "at&t wireless"]),
+    ("Verizon",   "telecom",   ["verizon", "verizon wireless", "vzw"]),
+    ("T-Mobile",  "telecom",   ["t-mobile", "tmobile", "t mobile"]),
+    ("Comcast",   "telecom",   ["comcast", "xfinity"]),
+    ("Geico",     "insurance", ["geico", "geico insurance"]),
+    ("State Farm","insurance", ["state farm"]),
+]
 
-# Patterns to strip from raw merchant strings
+# Patterns to strip from raw merchant strings — preserves & + - . / for brand fidelity
 _STRIP_PATTERNS = [
     r"\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b",  # phone numbers
-    r"\b\d{5,}\b",                            # long numeric IDs
-    r"\b[A-Z]{2}\b(?=\s|$)",                  # 2-letter state codes at end
-    r"#\S+",                                   # reference numbers like #12345
-    r"\*+\S*",                                 # asterisk-prefixed tokens
-    r"\b(llc|inc|corp|ltd|co)\b",             # legal suffixes
-    r"[^\w\s./+-]",                            # misc punctuation
+    r"\b\d{5,}\b",                           # long numeric IDs
+    r"\b[A-Z]{2}\b(?=\s|$)",                 # 2-letter state codes at end
+    r"#\S+",                                  # reference numbers
+    r"\*+\S*",                                # asterisk-prefixed tokens
+    r"\b(llc|inc|corp|ltd|co)\b",            # legal suffixes
+    r"[^\w\s.&+/-]",                          # punctuation except & + . / -
 ]
 
 _COMPILED = [re.compile(p, re.IGNORECASE) for p in _STRIP_PATTERNS]
 
 
-def normalize(raw: str) -> str:
-    """Return a canonical merchant name from a raw transaction description."""
-    text = _clean(raw)
-    return _lookup(text) or _title_case(text)
-
-
-def _clean(raw: str) -> str:
-    text = unicodedata.normalize("NFKD", raw)
-    text = text.lower()
-    for pattern in _COMPILED:
-        text = pattern.sub(" ", text)
-    # Collapse whitespace
+def clean(raw: str) -> str:
+    """
+    Strip phone numbers, IDs, location/state codes, and punctuation noise
+    from a raw merchant string.  Preserves brand-defining characters
+    (& + . /).  Returns lowercase, single-spaced text.
+    """
+    if not raw:
+        return ""
+    text = unicodedata.normalize("NFKD", raw).lower()
+    for pat in _COMPILED:
+        text = pat.sub(" ", text)
     text = re.sub(r"\s+", " ", text).strip()
-    # Remove trailing domain-like suffixes (.com, .net, etc.)
-    text = re.sub(r"\.(com|net|org|io|co|biz|app)(\s|$)", " ", text).strip()
-    return text
+    # Drop trailing domain suffixes
+    text = re.sub(r"\.(com|net|org|io|co|biz|app)\b", " ", text).strip()
+    return re.sub(r"\s+", " ", text).strip()
 
 
-def _lookup(cleaned: str) -> str | None:
-    """Check alias table, trying progressively shorter prefixes."""
-    if cleaned in MERCHANT_ALIASES:
-        return MERCHANT_ALIASES[cleaned]
-    # Try each word token against the alias table
-    tokens = cleaned.split()
-    for length in range(len(tokens), 0, -1):
-        candidate = " ".join(tokens[:length])
-        if candidate in MERCHANT_ALIASES:
-            return MERCHANT_ALIASES[candidate]
-    return None
+# ---------------------------------------------------------------------------
+# Backward-compat: legacy normalize() returns a presentable canonical name
+# without consulting the registry.  Used by old call sites that haven't been
+# migrated to entity_resolver.resolve().
+# ---------------------------------------------------------------------------
 
-
-def _title_case(text: str) -> str:
-    return text.title()
+def normalize(raw: str) -> str:
+    cleaned = clean(raw)
+    if not cleaned:
+        return cleaned
+    if "&" in cleaned:
+        return cleaned.upper()
+    return cleaned.title()

@@ -4,6 +4,7 @@ __pycache__/
 *.pyo
 .env
 feedback.json
+services.json
 *.egg-info/
 dist/
 build/

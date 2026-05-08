@@ -1,6 +1,7 @@
 """
-Full pipeline — Phases 1–4 integrated.
+Full pipeline — Phases 1–4 integrated, with entity-resolution at the front.
 
+Phase 0: entity resolution (raw merchant string → canonical service)
 Phase 1: rule-based recurring detection + median predictor
 Phase 2: category classification + per-category thresholds
 Phase 3: ML-based expected-amount prediction (falls back to median)
@@ -12,17 +13,30 @@ Usage:
 """
 
 from datetime import timedelta
-from models import Transaction, RecurringPattern, Alert, PredictionResult
-from merchant_normalizer import normalize
+from models import Transaction, RecurringPattern, Alert, PredictionResult, ResolutionResult
 from category_classifier import classify
 from category_rules import get_rule
 from recurring_detector import BILLING_CYCLES, CYCLE_FIT_THRESHOLD, _best_billing_cycle
 from outlier_detector import evaluate
 from ml_predictor import get_predictor
 import feedback_adjuster
+import entity_resolver
 
 MIN_HISTORY = 2
 _SEASONAL_WINDOW_DAYS = 30
+
+
+def resolve_all(transactions: list[Transaction]) -> list[ResolutionResult]:
+    """Run entity resolution for every transaction. Order matters: registry learns aliases as it goes."""
+    return [
+        entity_resolver.resolve(
+            raw_merchant=t.merchant_raw,
+            txn_date=t.date,
+            mcc=t.category_mcc,
+            auto_create=True,
+        )
+        for t in transactions
+    ]
 
 
 def run(transactions: list[Transaction], use_ml: bool = True) -> list[Alert]:
@@ -37,20 +51,28 @@ def run(transactions: list[Transaction], use_ml: bool = True) -> list[Alert]:
     """
     predictor = get_predictor() if use_ml else None
 
-    by_merchant: dict[str, list[Transaction]] = {}
-    for txn in transactions:
-        key = normalize(txn.merchant_raw)
-        by_merchant.setdefault(key, []).append(txn)
+    # ---- Phase 0: resolve every transaction to a canonical service ----
+    resolutions = resolve_all(transactions)
+
+    # Group by canonical service id (so different aliases collapse together)
+    by_service: dict[str, list[Transaction]] = {}
+    service_meta: dict[str, ResolutionResult] = {}
+    for txn, res in zip(transactions, resolutions):
+        key = res.service_id or f"unresolved::{res.cleaned}"
+        by_service.setdefault(key, []).append(txn)
+        service_meta[key] = res
 
     alerts: list[Alert] = []
-    for merchant, txns in by_merchant.items():
-        sample = txns[0]
-        category = classify(sample.merchant_raw, mcc=sample.category_mcc)
+    for key, txns in by_service.items():
+        meta = service_meta[key]
+        canonical = meta.canonical_name or meta.cleaned or "Unknown"
+        # Prefer the registry's category; fall back to per-transaction MCC/keyword classification
+        category = meta.category or classify(txns[0].merchant_raw, mcc=txns[0].category_mcc)
         rule = get_rule(category)
 
         txns_sorted = sorted(txns, key=lambda t: t.date)
         alerts.extend(
-            _evaluate_merchant(merchant, category, rule, txns_sorted, predictor)
+            _evaluate_merchant(canonical, category, rule, txns_sorted, predictor)
         )
 
     # Phase 4: apply feedback-based score adjustments
