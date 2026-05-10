@@ -18,6 +18,11 @@ MERCHANT_ALIASES = {
     "google": "Google",
     "google play": "Google",
     "youtube": "YouTube",
+    "youtube premium": "YouTube",
+    "yt premium": "YouTube",
+    "chess com": "Chess.com",
+    "chess.com": "Chess.com",
+    "chess premium": "Chess.com",
     "hulu": "Hulu",
     "disney": "Disney+",
     "disneyplus": "Disney+",
@@ -48,13 +53,20 @@ MERCHANT_ALIASES = {
     "wsj": "Wall Street Journal",
     "washington post": "Washington Post",
     "wapost": "Washington Post",
+    "verizon": "Verizon Wireless",
+    "verizon wireless": "Verizon Wireless",
+    "pge": "PG&E",
+    "pg e": "PG&E",
+    "pg&e": "PG&E",
+    "pg e autopay": "PG&E",
+    "pgande": "PG&E",
 }
 
 # Patterns to strip from raw merchant strings
 _STRIP_PATTERNS = [
     r"\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b",  # phone numbers
     r"\b\d{5,}\b",                            # long numeric IDs
-    r"\b[A-Z]{2}\b(?=\s|$)",                  # 2-letter state codes at end
+    r"\b[a-z]{2}$",                              # trailing 2-letter state code
     r"#\S+",                                   # reference numbers like #12345
     r"\*+\S*",                                 # asterisk-prefixed tokens
     r"\b(llc|inc|corp|ltd|co)\b",             # legal suffixes
@@ -73,12 +85,16 @@ def normalize(raw: str) -> str:
 def _clean(raw: str) -> str:
     text = unicodedata.normalize("NFKD", raw)
     text = text.lower()
+    text = text.replace("&", " and ")
     for pattern in _COMPILED:
         text = pattern.sub(" ", text)
     # Collapse whitespace
     text = re.sub(r"\s+", " ", text).strip()
     # Remove trailing domain-like suffixes (.com, .net, etc.)
     text = re.sub(r"\.(com|net|org|io|co|biz|app)(\s|$)", " ", text).strip()
+    # Collapse frequent connective words that are not identity-bearing
+    text = re.sub(r"\b(and)\b", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
     return text
 
 

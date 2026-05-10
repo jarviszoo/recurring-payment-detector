@@ -241,7 +241,11 @@ def _same_month_prior_year(
     current: Transaction,
     history: list[Transaction],
 ) -> list[Transaction]:
-    target = current.date.replace(year=current.date.year - 1)
+    try:
+        target = current.date.replace(year=current.date.year - 1)
+    except ValueError:
+        # Handle leap-day transactions by anchoring to Feb 28 in non-leap years.
+        target = current.date.replace(year=current.date.year - 1, day=28)
     return [
         t for t in history
         if abs((t.date - target).days) <= _SEASONAL_WINDOW_DAYS

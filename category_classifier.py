@@ -73,6 +73,7 @@ MERCHANT_CATEGORY: dict[str, str] = {
     "Xbox": "gaming",
     "PlayStation": "gaming",
     "Nintendo": "gaming",
+    "Chess.com": "gaming",
     # News
     "NY Times": "news",
     "Wall Street Journal": "news",
