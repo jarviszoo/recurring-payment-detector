@@ -56,14 +56,19 @@ def top_n(
 # ---------------------------------------------------------------------------
 
 def _score_service(query: str, service: CanonicalService) -> float:
-    """Best score across canonical name + all aliases."""
-    targets: list[tuple[str, float]] = [(service.canonical_name.lower(), 1.05)]
+    """Best score across canonical name + all aliases (all cleaned the same way as the query)."""
+    from merchant_normalizer import clean as _clean
+    targets: list[tuple[str, float]] = [(_clean(service.canonical_name), 1.05)]
     for a in service.aliases:
-        targets.append((a.lower(), 1.0))
+        cleaned_alias = _clean(a)
+        if cleaned_alias:
+            targets.append((cleaned_alias, 1.0))
 
     best = 0.0
     for target, boost in targets:
-        # token_set_ratio handles word reordering and partial matches well
+        if not target:
+            continue
+        # token_set_ratio handles word reordering and partial matches
         score_set = fuzz.token_set_ratio(query, target)
         # ratio is stricter — penalises edit-distance differences
         score_ratio = fuzz.ratio(query, target)

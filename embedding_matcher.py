@@ -29,7 +29,8 @@ class EmbeddingIndex:
     # ------------------------------------------------------------------
 
     def build(self, services: list[CanonicalService]) -> None:
-        """Build a TF-IDF index over canonical names + aliases."""
+        """Build a TF-IDF index over canonical names + aliases (all cleaned consistently)."""
+        from merchant_normalizer import clean as _clean
         sig = self._compute_signature(services)
         if sig == self._signature and self._vectorizer is not None:
             return  # nothing changed
@@ -38,7 +39,7 @@ class EmbeddingIndex:
         row_to_service: list[CanonicalService] = []
         for s in services:
             for text in [s.canonical_name, *s.aliases]:
-                cleaned = text.lower().strip()
+                cleaned = _clean(text)
                 if cleaned:
                     corpus.append(cleaned)
                     row_to_service.append(s)

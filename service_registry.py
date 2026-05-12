@@ -43,11 +43,15 @@ def find_by_canonical(name: str) -> CanonicalService | None:
 
 
 def find_by_alias(alias: str) -> CanonicalService | None:
-    """Exact (case-insensitive) match on any stored alias."""
-    target = alias.lower().strip()
+    """Exact match on any stored alias (cleaned, case-insensitive)."""
+    from merchant_normalizer import clean
+    target = clean(alias)
+    if not target:
+        return None
     for s in all_services():
-        if any(a.lower() == target for a in s.aliases):
-            return s
+        for a in s.aliases:
+            if clean(a) == target:
+                return s
     return None
 
 
