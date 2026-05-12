@@ -1,2 +1,9 @@
 scikit-learn>=1.3
 numpy>=1.24
+rapidfuzz>=3.0
+
+# Email-attachment loaders
+pypdf>=4.0          # text-based PDF extraction
+pytesseract>=0.3    # OCR for images / scanned PDFs (needs Tesseract binary)
+Pillow>=10.0        # image loading
+reportlab>=4.0      # only used by generate_sample_attachments.py
