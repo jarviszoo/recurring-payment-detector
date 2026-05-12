@@ -1,0 +1,12 @@
+From: Acme Widgets Co <billing@acmewidgets.example>
+Subject: Invoice from Acme Widgets
+Date: 03/01/2026
+
+Hi,
+
+Thanks for your purchase from Acme Widgets.
+
+Total charged: $42.50
+Billed: Monthly
+
+This is a sample of a vendor we don't have in the database.

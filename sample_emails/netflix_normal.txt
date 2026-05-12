@@ -1,0 +1,18 @@
+From: Netflix <info@mailer.netflix.com>
+To: jxu114@dons.usfca.edu
+Subject: Your Netflix invoice
+Date: March 14, 2026
+
+Hi Jarvis,
+
+Thanks for being a Netflix member.
+
+Your monthly charge has been processed.
+
+Plan:    Standard
+Amount:  $15.49
+Billing: Monthly
+
+If you didn't make this payment, log in to netflix.com/account.
+
+— The Netflix team

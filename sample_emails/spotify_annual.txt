@@ -1,0 +1,16 @@
+From: Spotify <no-reply@spotify.com>
+Subject: Your Spotify Premium receipt
+Date: 04/03/2026
+
+Hi,
+
+Thanks for being a Premium subscriber.
+
+You've been billed for your annual plan.
+
+Plan:    Premium Individual
+Total:   $119.99
+Billing: Yearly
+Date:    April 3, 2026
+
+— Spotify
