@@ -21,6 +21,7 @@ from outlier_detector import evaluate
 from ml_predictor import get_predictor
 import feedback_adjuster
 import entity_resolver
+import duplicate_detector
 
 MIN_HISTORY = 2
 _SEASONAL_WINDOW_DAYS = 30
@@ -74,6 +75,8 @@ def run(transactions: list[Transaction], use_ml: bool = True) -> list[Alert]:
         alerts.extend(
             _evaluate_merchant(canonical, category, rule, txns_sorted, predictor)
         )
+        # Duplicate-charge detection runs independently of the price-anomaly path
+        alerts.extend(duplicate_detector.detect(canonical, category, txns_sorted))
 
     # Phase 4: apply feedback-based score adjustments
     alerts = [feedback_adjuster.adjust(a) for a in alerts]
