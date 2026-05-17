@@ -83,12 +83,17 @@ def _parse_date(raw: str) -> date:
 
 
 def _parse_amount(raw: Any) -> float:
+    if raw is None:
+        raise ValueError("missing amount")
     if isinstance(raw, (int, float)):
         return float(raw)
     text = str(raw).strip().replace(",", "").replace("$", "")
     if not text:
-        raise ValueError("empty amount")
-    return float(text)
+        raise ValueError("missing amount")
+    try:
+        return float(text)
+    except ValueError as exc:
+        raise ValueError(f"invalid amount: {raw!r}") from exc
 
 
 def _row_to_transaction(row: dict[str, Any], line_no: int) -> Transaction:
