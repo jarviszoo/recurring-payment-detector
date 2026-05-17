@@ -302,9 +302,11 @@ def _render_loaded_preview() -> None:
             st.warning(w)
 
     guides: dict[str, CancellationGuide] = {}
+    source_priority = {"xlsx_database": 0, "built_in_database": 1, "web_search": 2}
     for txn in txns:
         guide = get_cancellation_guide(txn.merchant_raw)
-        if guide.service_name not in guides or guide.source == "database":
+        existing = guides.get(guide.service_name)
+        if existing is None or source_priority.get(guide.source, 3) < source_priority.get(existing.source, 3):
             guides[guide.service_name] = guide
 
     if guides:
