@@ -65,6 +65,8 @@ MERCHANT_CATEGORY: dict[str, str] = {
     "Duolingo": "software",
     "Calm": "software",
     "Headspace": "software",
+    "Icloud+": "cloud_storage",
+    "Icloud": "cloud_storage",
     # Mixed / app store
     "Apple": "app_store",
     "Google": "app_store",

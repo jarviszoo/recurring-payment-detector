@@ -94,3 +94,16 @@ SAMPLE_TRANSACTIONS = [
     Transaction("t082", "GEICO INSURANCE", 120.00, date(2026,  1, 1), category_mcc="6300"),
     Transaction("t083", "GEICO INSURANCE", 138.00, date(2026,  2, 1), category_mcc="6300"),
 ]
+
+
+# Intentionally noisy / typo'd transactions used by demos and the Streamlit UI.
+NOISY_EXTRAS = [
+    Transaction("n001", "NETFLX",                  15.49, date(2026, 4, 1)),
+    Transaction("n002", "Netflx.com 866-579-7172", 15.49, date(2026, 5, 1)),
+    Transaction("n003", "SPOTIFY-USA*REF99921",    11.18, date(2026, 4, 10)),
+    Transaction("n004", "PG E AUTOPAY",            205.00, date(2026, 1, 15)),
+    Transaction("n005", "ATT WIRELESS 8004310023", 95.00, date(2026, 4, 5)),
+    Transaction("n006", "TOTALLY UNKNOWN VENDOR",  4.99,  date(2026, 4, 20)),
+    Transaction("n007", "Totally Unknown Vendor",  4.99,  date(2026, 5, 20)),
+    Transaction("n008", "totally-unknown vendor",  4.99,  date(2026, 6, 20)),
+]

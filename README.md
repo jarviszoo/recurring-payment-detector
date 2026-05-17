@@ -1,251 +1,278 @@
 # Recurring Payment Detector
 
-An AI-powered subscription anomaly detector that turns noisy, raw transaction
-data (from emails or Open Banking APIs) into a structured database of
-canonical services, then flags charges that look unusual for a given user.
+Recurring Payment Detector ingests bank exports, JSON records, pasted email
+receipts, and `.eml` files, resolves noisy merchant names into canonical
+services, detects unusual recurring charges, and shows cancellation guidance
+for subscriptions.
 
-The system **does not rely on a hardcoded subscription price database**. It
-learns each user's recurring patterns and resolves merchant identities
-automatically from the transactions themselves — handling typos, formatting
-variants, and previously-unseen vendors.
+The detector does not depend on a fixed subscription-price table. It learns
+from the user's transaction history, groups variants such as `NETFLIX.COM`,
+`NFLX DIGITAL`, and `NETFLX`, then flags amount changes that are unusual for
+that merchant and category.
 
-## What it does
+## Highlights
 
-1. **Resolves identity** — `NETFLIX.COM 866-579-7172`, `NFLX DIGITAL`,
-   `Netflx.com`, and `Netflix LOS GATOS CA` all collapse to the canonical
-   service `Netflix`.
-2. **Discovers new services** — vendors not in the registry are auto-created
-   as low-confidence entries. Periodic clustering merges duplicates.
-3. **Detects recurring patterns** — splits transactions by amount tier and
-   billing cycle (e.g. Apple's $2.99 iCloud and $9.99 Music as separate
-   sub-patterns).
-4. **Predicts expected amounts** — gradient-boosted regression with quantile
-   confidence intervals; falls back to the median when prior history is too
-   thin or too volatile to be useful.
-5. **Flags anomalies with category-aware thresholds** — utilities and telecom
-   tolerate more variance than streaming or news.
-6. **Learns from user feedback** — alerts marked "expected" raise the
-   tolerance for that merchant; "unexpected" keeps it sharp.
+- CSV, JSON, manual row, pasted email, and `.eml` ingestion.
+- Receipt-aware email parsing for merchant, amount, charge date, and action
+  links.
+- Entity resolution with exact aliases, fuzzy matching, and TF-IDF embedding
+  matching.
+- Recurring charge detection with category-aware thresholds.
+- ML amount prediction with median fallback for thin history.
+- Streamlit UI for ingesting data, reviewing detections, saving feedback, and
+  exporting reports.
+- Cancellation guidance from an Excel database.
+- API-backed web research for unknown cancellation procedures, saved back into
+  the workbook in the same database format.
 
-## Pipeline
-
-```
-raw transaction
-     ↓
-[ Phase 0 ] entity_resolver
-     ↓                        ↓
-   clean()                  service_registry  ← persisted to services.json
-     ↓                        ↑
-   exact alias  ──────────────┤
-     ↓ miss                   │
-   fuzzy_matcher (rapidfuzz)  │
-     ↓ miss                   │
-   embedding_matcher (TF-IDF) │
-     ↓ miss                   │
-   auto-create (low confidence) ─┘
-     ↓
-canonical service + category
-     ↓
-[ Phase 1 ] recurring_detector  → cluster by amount tier, detect billing cycle
-     ↓
-[ Phase 2 ] category_rules      → choose per-category thresholds
-     ↓
-[ Phase 3 ] ml_predictor        → expected amount + 10/90 quantile CI
-     ↓
-[ Phase 4 ] outlier_detector    → severity scoring
-     ↓
-            feedback_adjuster   → re-score using stored user feedback
-     ↓
-        Alert (high / warning / low)
-```
-
-## Quick start
+## Quick Start
 
 ```bash
 pip install -r requirements.txt
-python main.py        # full demo across all phases
-python tests.py       # 31 assertions covering the resolver
+python tests.py
+python tests_ingest.py
+streamlit run app.py
 ```
 
-The demo runs three passes:
+Open the Streamlit URL shown in the terminal, usually:
 
-- **Pass A** — cold start: empty registry → seeded with ~27 well-known
-  services → resolves a noisy transaction batch → auto-learns aliases.
-- **Pass B** — anomaly detection with no feedback yet.
-- **Pass C** — simulates user feedback (expected / unexpected) and re-runs
-  detection to show how scores shift.
+```text
+http://localhost:8501
+```
 
-## File map
+## Configuration
+
+Runtime state is stored locally and ignored by Git:
+
+- `services.json`: learned canonical merchant registry
+- `feedback.json`: saved user feedback
+
+Optional environment variables:
+
+```bash
+# Use a specific cancellation workbook instead of the default search paths.
+SUBSCRIPTION_CANCELLATION_XLSX=/path/to/subscription_cancellation_process.xlsx
+
+# Enable API-backed web search for unknown cancellation policies.
+OPENAI_API_KEY=your_api_key
+
+# Optional; defaults to gpt-4.1-mini.
+OPENAI_WEBSEARCH_MODEL=gpt-4.1-mini
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:OPENAI_API_KEY="your_api_key"
+$env:SUBSCRIPTION_CANCELLATION_XLSX="C:\Users\user\Downloads\subscription_cancellation_process.xlsx"
+```
+
+## Streamlit Workflow
+
+The app supports these ingest paths:
+
+| Tab | Input |
+| --- | --- |
+| CSV upload | Bank export with `merchant_raw`, `amount`, and `date` |
+| JSON upload | Array of transactions or `{"transactions": [...]}` |
+| Email | Pasted receipt text or uploaded `.eml` |
+| Manual entry | Editable transaction table |
+| Demo data | Built-in sample transaction history |
+
+After data is loaded, click **Run detection** in the sidebar. The app shows:
+
+- Loaded transaction preview
+- Cancellation guidance for recognized subscriptions
+- Alert table with severity, expected amount, actual amount, and reasons
+- Merchant resolution details
+- Per-alert feedback controls
+- JSON and CSV export buttons
+
+## Email and `.eml` Parsing
+
+The email parser handles plain text and HTML receipts. It ranks receipt fields
+to avoid common mistakes such as choosing subtotal, tax, refund, or promo
+amounts instead of the actual charged total.
+
+For Apple subscription confirmations and similar emails, it can identify the
+real subscription from body structure, such as:
+
+- `App -> iCloud`
+- `Plan -> iCloud+ with 200 GB storage`
+- `Renewal Price -> $3.99/month`
+- `Date of Upgrade -> Sep 9, 2025`
+
+The parser also extracts useful action links from `.eml` HTML, such as account,
+purchase-history, billing, manage, and subscription links.
+
+## Cancellation Guidance
+
+Cancellation guidance is loaded in this order:
+
+1. Excel workbook database
+2. Built-in fallback guide for common services
+3. Structured web-search fallback
+
+By default, the app looks for:
+
+```text
+./subscription_cancellation_process.xlsx
+~/Downloads/subscription_cancellation_process.xlsx
+```
+
+You can override this with `SUBSCRIPTION_CANCELLATION_XLSX`.
+
+The workbook is expected to use the existing database-style columns:
+
+| Column | Purpose |
+| --- | --- |
+| Provider | Service or company name |
+| Market Position | Market coverage or contextual note |
+| Price Range | Typical plan pricing |
+| Billing Cycle | Monthly, annual, quarterly, etc. |
+| Website | Vendor website |
+| Cancellation Process | Detailed cancellation workflow |
+| additional resources | Official URLs, support links, or source notes |
+
+## API Web Search for Unknown Providers
+
+For unknown providers, the app shows **Research with API and update database**.
+When clicked, it:
+
+1. Uses `OPENAI_API_KEY` with the OpenAI Responses API web-search tool.
+2. Searches for current official cancellation instructions.
+3. Formats the result into the same workbook schema.
+4. Saves or updates a row in the `LLM Web Search` sheet.
+5. Reloads the guide from the workbook.
+
+The generated cancellation process is deliberately workbook-style, for example:
+
+```text
+Type 1 - Direct subscription
+Direct link: https://example.com/account
+Workflow:
+1. Sign in.
+2. Open Billing or Subscriptions.
+3. Select Cancel or turn off auto-renewal.
+4. Confirm and keep the confirmation email.
+
+Watch-out:
+If billed through Apple, Google Play, Amazon, PayPal, a mobile carrier, or
+another partner, cancel through that billing provider.
+```
+
+The app does not run API web research silently on every page refresh. A user
+must click the research button so API usage is explicit.
+
+## Programmatic Usage
+
+```python
+from ingest import parse_csv, analyze
+
+with open("charges.csv", encoding="utf-8") as f:
+    parsed = parse_csv(f.read())
+
+report = analyze(parsed.transactions, use_ml=True)
+
+for alert in report.alerts:
+    print(alert.merchant, alert.severity, alert.actual_amount)
+```
+
+Parse an `.eml` file:
+
+```python
+from pathlib import Path
+from ingest.email_parser import parse_eml
+
+extraction, parsed = parse_eml(Path("receipt.eml").read_bytes())
+
+print(extraction.merchant_raw, extraction.amount, extraction.date)
+print(parsed.transactions)
+```
+
+Research and save a cancellation procedure:
+
+```python
+from cancellation import research_and_update_cancellation_guide
+
+guide = research_and_update_cancellation_guide("Example Vendor")
+print(guide.service_name)
+print(guide.cancellation_process)
+```
+
+## Pipeline
+
+```text
+raw transaction
+  -> entity_resolver
+  -> merchant registry and category
+  -> recurring_detector
+  -> category_rules
+  -> ml_predictor or median fallback
+  -> outlier_detector
+  -> feedback_adjuster
+  -> alert report
+```
+
+## File Map
 
 | File | Purpose |
-|---|---|
-| `models.py` | Dataclasses: `Transaction`, `CanonicalService`, `ResolutionResult`, `RecurringPattern`, `PredictionResult`, `Alert`, `FeedbackEntry` |
-| `merchant_normalizer.py` | `clean()` — regex strip / Unicode normalize, preserves `& + . /` for brand fidelity. Holds `SEED_SERVICES` for cold-start. |
-| `service_registry.py` | Persistent canonical-service DB (JSON). CRUD, alias merging, confidence tracking, `bootstrap_seed()`. |
-| `fuzzy_matcher.py` | rapidfuzz `token_set_ratio` + `ratio` against canonical names + learned aliases. |
-| `embedding_matcher.py` | TF-IDF char n-gram (2–4) cosine similarity index, lazily rebuilt. |
-| `clusterer.py` | DBSCAN clustering of unresolved merchants into candidate services. |
-| `entity_resolver.py` | Multi-stage resolution orchestrator (exact → fuzzy → embedding → corroborated → auto-create). |
-| `category_classifier.py` | MCC code → alias-table → keyword-regex layered classifier. |
-| `category_rules.py` | Per-category thresholds, lookback, seasonal flag, extra reason hints. |
-| `recurring_detector.py` | Billing-cycle scoring (weekly / biweekly / monthly / quarterly / annual), amount clustering. |
-| `feature_extractor.py` | 14-dim feature vector for the ML predictor. |
-| `synthetic_training.py` | Generates 2000 labeled training examples across 7 realistic subscription patterns. |
-| `ml_predictor.py` | Three `GradientBoostingRegressor` models (median + 10th + 90th quantile) with confidence-based fallback. |
-| `outlier_detector.py` | Threshold check, outlier scoring, severity bands, category-specific reason hints. |
-| `feedback_store.py` | JSON-backed user feedback persistence. |
-| `feedback_adjuster.py` | Re-scores alerts using prior feedback (raises tolerance for confirmed-expected merchants). |
-| `pipeline.py` | Wires Phase 0–4 together: `run(transactions, use_ml=True) -> [Alert]`. |
-| `sample_data.py` | 40 hand-crafted transactions covering every detection scenario. |
-| `main.py` | End-to-end demo runner. |
-| `tests.py` | 31 smoke assertions (text cleaning, all resolution paths, alias auto-learning, clustering). |
-
-## Data model
-
-### `CanonicalService`
-
-```python
-service_id          str       # UUID prefix
-canonical_name      str       # "Netflix"
-category            str       # "streaming"
-aliases             list[str] # ["netflix", "nflx", "netflix com", ...]
-first_seen          date
-last_seen           date
-transaction_count   int
-confidence          float     # 0–1
-source              str       # "manual" | "auto" | "fuzzy" | "embedding" | "cluster"
-```
-
-Persisted to `services.json` (gitignored). New aliases are auto-attached
-when a fuzzy / embedding match scores ≥ 0.80, so the registry learns variant
-spellings without explicit labels.
-
-### `ResolutionResult`
-
-```python
-raw             str               # original bank string
-cleaned         str               # post-regex
-canonical_name  str | None        # None if unresolved
-service_id      str | None
-category        str | None
-method          str               # "exact_alias" | "fuzzy" | "embedding"
-                                  # | "fuzzy+embedding" | "new_service" | "unresolved"
-confidence      float             # 0–1
-candidates      list[(name, score)]   # top-N alternatives for traceability
-```
-
-### `Alert`
-
-```python
-transaction          Transaction
-normalized_merchant  str
-expected_amount      float
-actual_amount        float
-difference           float
-percentage_change    float
-severity             str        # "low" | "warning" | "high"
-outlier_score        float      # 0–1
-prediction           PredictionResult   # method + CI + confidence
-possible_reasons     list[str]
-feedback_adjusted    bool
-```
-
-## Resolution thresholds
-
-| Signal | High accept | Corroborated accept |
-|---|---|---|
-| rapidfuzz token-set / ratio | ≥ 0.92 | ≥ 0.80 if embedding agrees |
-| TF-IDF cosine | ≥ 0.75 | ≥ 0.55 if fuzzy agrees |
-| Auto-attach alias | confidence ≥ 0.80 | — |
-| Auto-create new service | always (when nothing else accepts) | starting confidence 0.30 |
-
-Thresholds live at the top of `entity_resolver.py` — tune them to trade
-precision against recall.
-
-## Outlier thresholds
-
-Universal tier-based defaults; categories can override.
-
-| Expected amount | Min $ diff | Min % change |
-|---|---|---|
-| < $20 | $3 | 20% |
-| $20 – $100 | $10 | 15% |
-| > $100 | $25 | 10% |
-
-| Category | Override |
-|---|---|
-| `telecom` | $15 + 25% (taxes / roaming variance) |
-| `utilities` | $20 + 30%, seasonal lookup of same-month-prior-year |
-| `software` | $5 + 10% (seat / annual flips) |
-| `streaming`, `music`, `news`, `cloud_storage`, `gaming`, `fitness`, `app_store`, `mixed_commerce`, `delivery` | each tuned in `category_rules.py` |
-
-## ML predictor
-
-Three `GradientBoostingRegressor` models trained at startup on 2000 synthetic
-subscription histories covering: stable recurring, gradual price creep,
-sudden plan upgrade, discount expiry, monthly→annual conversion, telecom
-variance, and seasonal utility patterns.
-
-| Model | Loss | Role |
-|---|---|---|
-| Median | `squared_error` | Point prediction |
-| Lower | `quantile, alpha=0.10` | 10th-percentile bound |
-| Upper | `quantile, alpha=0.90` | 90th-percentile bound |
-
-Falls back to the simple median predictor when:
-
-- fewer than 3 prior charges in the cluster, or
-- the ML interval is too wide (confidence < 0.50 → `1 - (upper-lower)/expected`)
-
-## Feedback loop
-
-Each alert can be marked `expected`, `unexpected`, `cancel`, or
-`remind_later`. Feedback is appended to `feedback.json`. On the next
-detection pass, `feedback_adjuster.adjust()` computes a per-merchant
-tolerance multiplier:
-
-- `+0.25` per prior `expected` (capped at 3×)
-- `−0.15` per prior `unexpected` / `cancel` (floored at 1×)
-
-The outlier score is divided by the multiplier; severity may drop from
-`high` → `warning` or be suppressed entirely.
-
-## Tech stack
-
-- **Python 3.10+**
-- `scikit-learn` — `TfidfVectorizer`, `DBSCAN`, `GradientBoostingRegressor`
-- `rapidfuzz` — token-set + edit-distance string scoring
-- `numpy` — feature vectors and array math
-- JSON files (`services.json`, `feedback.json`) for persistence — no DB
-  dependency
+| --- | --- |
+| `app.py` | Streamlit UI for ingestion, detection, feedback, cancellation guidance, and exports |
+| `cancellation.py` | Excel-backed cancellation database lookup plus API web-search update flow |
+| `ingest/email_parser.py` | Receipt and `.eml` parsing |
+| `ingest/parsers.py` | CSV, JSON, and record parsing into `Transaction` objects |
+| `ingest/runner.py` | Structured analysis report builder |
+| `ingest/serializers.py` | JSON and CSV export helpers |
+| `models.py` | Core dataclasses |
+| `entity_resolver.py` | Merchant identity resolution orchestrator |
+| `merchant_normalizer.py` | Merchant cleaning and seed service aliases |
+| `service_registry.py` | JSON-backed canonical merchant registry |
+| `pipeline.py` | End-to-end detection pipeline |
+| `recurring_detector.py` | Billing cycle and amount-tier detection |
+| `ml_predictor.py` | Expected amount prediction |
+| `outlier_detector.py` | Alert scoring and severity |
+| `feedback_store.py` | Feedback persistence |
+| `feedback_adjuster.py` | Feedback-based alert rescoring |
+| `sample_data.py` | Demo transaction data |
+| `templates/sample_transactions.csv` | Upload template |
+| `tests.py` | Entity-resolution smoke tests |
+| `tests_ingest.py` | Ingestion, `.eml`, cancellation, and analysis tests |
 
 ## Tests
 
 ```bash
 python tests.py
+python tests_ingest.py
 ```
 
-Runs 31 assertions across:
+Current coverage includes:
 
-- Text cleaning (preservation of `&` in `PG&E`, `AT&T`)
-- Exact alias resolution
-- Fuzzy resolution of typos (`NETFLX`, `NETFLIIX`)
-- Embedding resolution of variants (`PG E AUTOPAY` → `PG&E`)
-- New-service creation for unknown vendors
-- Alias auto-learning (second `NETFLX` hits `exact_alias`)
-- Cross-variant grouping (5 Netflix variants → one canonical)
-- DBSCAN clustering of duplicate strings
+- Merchant text cleaning
+- Exact alias, fuzzy, and embedding resolution
+- Alias auto-learning
+- Cross-variant grouping
+- CSV and JSON ingestion
+- Receipt and `.eml` parsing
+- Apple/iCloud subscription parsing
+- Cancellation database lookup
+- API-researched row save/load behavior
+- Analysis smoke test
 
-## Limits & next steps
+## Security and Privacy
 
-- Synthetic training only — once real labeled data is available, retrain on
-  it for sharper quantile bounds.
-- Same-month-prior-year seasonal blend needs ≥ 12 months of history to
-  shine; first-year users will see one-off seasonal alerts that resolve
-  themselves once feedback arrives.
-- Fuzzy / embedding thresholds are conservative; users in domains with
-  many similarly-named merchants (e.g. local utilities) should tune them
-  down and add more `SEED_SERVICES` entries to disambiguate.
-- No streaming / online deployment — the registry is read on every
-  resolve. For production scale, swap the JSON store for SQLite or a
-  proper KV store and cache the embedding index in memory.
+- Do not commit `services.json`, `feedback.json`, `.env`, or API keys.
+- The app only calls the OpenAI API when the user clicks the research button.
+- Unknown-provider API research should be reviewed before acting on cancellation
+  instructions, especially for refunds, deadlines, and billing partners.
+- The cancellation workbook can contain source URLs and support links; verify
+  official domains before entering credentials.
+
+## Limits
+
+- ML training uses synthetic examples; retrain with labeled production data for
+  sharper predictions.
+- First-year utility users may see seasonal false positives until enough history
+  exists.
+- API web-search output is saved to the workbook but should still be reviewed
+  for provider-specific terms and current refund policies.

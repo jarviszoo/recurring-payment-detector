@@ -29,6 +29,7 @@ SEED_SERVICES: list[tuple[str, str, list[str]]] = [
     ("Paramount+","streaming", ["paramount", "paramount plus"]),
     ("Peacock",   "streaming", ["peacock"]),
     ("Canva",     "software",  ["canva"]),
+    ("iCloud+",   "cloud_storage", ["icloud", "icloud+", "icloud plus"]),
     ("Dropbox",   "cloud_storage", ["dropbox"]),
     ("GitHub",    "software",  ["github"]),
     ("Notion",    "software",  ["notion"]),

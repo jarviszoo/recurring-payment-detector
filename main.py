@@ -12,12 +12,11 @@ The demo intentionally uses noisy raw merchant strings (typos, formatting
 variants) to exercise the resolver.
 """
 
-import sys, io
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+import io
+import sys
 
 from datetime import date
-from sample_data import SAMPLE_TRANSACTIONS
-from models import Transaction
+from sample_data import NOISY_EXTRAS, SAMPLE_TRANSACTIONS
 from pipeline import run, format_alert, resolve_all
 from category_classifier import classify
 
@@ -29,17 +28,13 @@ import clusterer
 from merchant_normalizer import SEED_SERVICES
 
 
-# Add some intentionally noisy / typo'd transactions to exercise the resolver
-NOISY_EXTRAS = [
-    Transaction("n001", "NETFLX",                  15.49, date(2026, 4, 1)),
-    Transaction("n002", "Netflx.com 866-579-7172", 15.49, date(2026, 5, 1)),
-    Transaction("n003", "SPOTIFY-USA*REF99921",    11.18, date(2026, 4, 10)),
-    Transaction("n004", "PG E AUTOPAY",            205.00, date(2026, 1, 15)),
-    Transaction("n005", "ATT WIRELESS 8004310023", 95.00, date(2026, 4, 5)),
-    Transaction("n006", "TOTALLY UNKNOWN VENDOR",  4.99,  date(2026, 4, 20)),
-    Transaction("n007", "Totally Unknown Vendor",  4.99,  date(2026, 5, 20)),
-    Transaction("n008", "totally-unknown vendor",  4.99,  date(2026, 6, 20)),
-]
+def _configure_stdout() -> None:
+    """Use UTF-8 for the CLI demo without touching Streamlit imports."""
+    try:
+        if hasattr(sys.stdout, "buffer") and (sys.stdout.encoding or "").lower() != "utf-8":
+            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+    except (AttributeError, OSError, ValueError):
+        pass
 
 
 def _category_for(merchant_raw: str, mcc: str | None) -> str:
@@ -167,4 +162,5 @@ def main():
 
 
 if __name__ == "__main__":
+    _configure_stdout()
     main()
